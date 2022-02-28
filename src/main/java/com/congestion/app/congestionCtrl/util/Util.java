@@ -7,6 +7,7 @@ import com.congestion.app.congestionCtrl.model.CongestionTaxResponseMdl;
 import com.congestion.app.congestionCtrl.model.TaxAppliedModel;
 
 import java.time.*;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -35,7 +36,7 @@ public class Util {
         if(taxAppliedModelList != null) {
             for(int index = taxAppliedModelList.size() - 1;index >= 0 ;index--){
                 Duration minsBetweenPrevToll = Duration.between(taxAppliedModelList.get(index).getDrivingInDateAndTime(),currInstant);
-                if(minsBetweenPrevToll.getSeconds()/60 > mins) {
+                if(Math.abs(minsBetweenPrevToll.getSeconds())/60 > mins) {
                     break;
                 } else {
                     taxAppliedModelPrevToll.add(taxAppliedModelList.get(index));
@@ -48,12 +49,12 @@ public class Util {
     public static List<TaxAppliedModel> findTaxsPaidInOneDay(String vehicleNum, Instant currInstant) {
         List<TaxAppliedModel> taxAppliedModelPrevToll = new ArrayList<>();
         List<TaxAppliedModel> taxAppliedModelList = LoadData.vehicleDtlTaxMap.get(vehicleNum);
-        LocalDate currLocalDate = LocalDate.from(currInstant);
+        Instant currInstantTruc = currInstant.truncatedTo(ChronoUnit.DAYS);
 
         if(taxAppliedModelList != null) {
             for(int index = taxAppliedModelList.size() - 1;index >= 0 ;index--){
-                LocalDate prevLocalDate = LocalDate.from(taxAppliedModelList.get(index).getDrivingInDateAndTime());
-                if(currLocalDate.equals(prevLocalDate)) {
+                Instant prevInstant = taxAppliedModelList.get(index).getDrivingInDateAndTime().truncatedTo(ChronoUnit.DAYS);
+                if(currInstantTruc.equals(prevInstant)) {
                     taxAppliedModelPrevToll.add(taxAppliedModelList.get(index));
                 } else {
                     break;

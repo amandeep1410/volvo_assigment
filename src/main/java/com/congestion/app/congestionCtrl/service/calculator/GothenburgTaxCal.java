@@ -1,40 +1,33 @@
 package com.congestion.app.congestionCtrl.service.calculator;
 
-import com.congestion.app.congestionCtrl.TollFreeCalculator;
-import com.congestion.app.congestionCtrl.contant.CongestionConstant;
 import com.congestion.app.congestionCtrl.initializedata.LoadData;
-import com.congestion.app.congestionCtrl.model.CongestionTaxModel;
-import com.congestion.app.congestionCtrl.model.CongestionTaxResponseMdl;
-import com.congestion.app.congestionCtrl.model.TaxAppliedModel;
-import com.congestion.app.congestionCtrl.model.TaxInputModel;
-import com.congestion.app.congestionCtrl.rule.MaxTaxPerDayRule;
-import com.congestion.app.congestionCtrl.rule.SingleChargeRule;
+import com.congestion.app.congestionCtrl.model.*;
+import com.congestion.app.congestionCtrl.rule.taxRule.ITaxRule;
+import com.congestion.app.congestionCtrl.rule.taxRule.SingleChargeRule;
+import com.congestion.app.congestionCtrl.rule.tollFreeRule.ITollFree;
 import com.congestion.app.congestionCtrl.util.DateUtil;
 import com.congestion.app.congestionCtrl.util.Util;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.List;
 
 @Component
 public class GothenburgTaxCal implements TaxCalculator {
 
     @Autowired
-    TollFreeCalculator tollFreeCalculator;
-
-    @Autowired
     SingleChargeRule singleChargeRule;
 
     @Autowired
-    MaxTaxPerDayRule maxTaxPerDayRule;
+    List<ITollFree> tollFreeValidators;
+
+    @Autowired
+    List<ITaxRule> iTaxRulesList;
 
     @Override
     public CongestionTaxResponseMdl calculateTax(TaxInputModel taxInputModel) {
-        if (tollFreeCalculator.isVehicleTollFree(taxInputModel.getVehicleType()) ||
-                tollFreeCalculator.isTollFreeDate(taxInputModel.getDrivingInDateAndTime()) ||
-                tollFreeCalculator.isTollFreeTime(taxInputModel) ||
-                maxTaxPerDayRule.isMaxTollPaid(taxInputModel)
-        ) {
+        if (isTollFree(taxInputModel)) {
             return Util.createTaxResponseMdl(taxInputModel, 0.0);
         } else {
             return calculateCongestionFee(taxInputModel);
@@ -46,12 +39,11 @@ public class GothenburgTaxCal implements TaxCalculator {
         checkIfFirstEntrythenAddTollDetail(taxInputModel);
 
         CongestionTaxModel matchedBasicTaxModel = getBasicTaxSlab(taxInputModel);
-        TaxAppliedModel prevMaxTollApplied = singleChargeRule.getPrevMaxTollApplied(taxInputModel);
-
-        double toll = getTollAmt(matchedBasicTaxModel, prevMaxTollApplied, taxInputModel);
+        TaxModel taxModel = new TaxModel(matchedBasicTaxModel.getTaxAmt(), taxInputModel);
+        iTaxRulesList.stream().forEach(taxRule -> taxRule.apply(taxModel));
 
         addTaxAppliedModel(taxInputModel, matchedBasicTaxModel);
-        return Util.createTaxResponseMdl(taxInputModel, toll);
+        return Util.createTaxResponseMdl(taxInputModel, taxModel.getToll());
     }
 
     private CongestionTaxModel getBasicTaxSlab(TaxInputModel taxInputModel) {
@@ -71,27 +63,10 @@ public class GothenburgTaxCal implements TaxCalculator {
         return taxAppliedModel;
     }
 
-    private double getTollAmt(CongestionTaxModel matchedBasicTaxModel, TaxAppliedModel prevMaxTollApplied, TaxInputModel taxInputModel){
-        double toll = matchedBasicTaxModel.getTaxAmt();
-        if(isVehicleOutsideTaxHours(matchedBasicTaxModel) && !isCarEnteringTollFirstTime(prevMaxTollApplied)) {
-            if(prevMaxTollApplied.getTaxAmt() < matchedBasicTaxModel.getTaxAmt()){
-                toll = matchedBasicTaxModel.getTaxAmt() - prevMaxTollApplied.getTaxAmt();
-            } else {
-                toll = 0.0;
-            }
-        }
-        if(CongestionConstant.MAX_TOLL - maxTaxPerDayRule.getTotalTaxPaidInOneDay(taxInputModel) < toll) {
-            toll = CongestionConstant.MAX_TOLL - maxTaxPerDayRule.getTotalTaxPaidInOneDay(taxInputModel);
-        }
-        return toll;
-    }
-
-    private boolean isVehicleOutsideTaxHours(CongestionTaxModel matchedBasicTaxModel){
-        return matchedBasicTaxModel.getTaxAmt() > CongestionConstant.ZERO;
-    }
-
-    private boolean isCarEnteringTollFirstTime(TaxAppliedModel prevMaxTollApplied){
-        return prevMaxTollApplied == null;
+    private boolean isTollFree(TaxInputModel taxInputModel) {
+        boolean isTollfree = false;
+        isTollfree = tollFreeValidators.stream().map(tollValidator -> tollValidator.apply(taxInputModel)).filter(isvalid -> isvalid).findFirst().orElse(false);
+        return isTollfree;
     }
 
     @Override
